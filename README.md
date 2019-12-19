@@ -11,12 +11,11 @@ We were inspired by these articles/repositories: [medium article](https://medium
 [procedural-sckyscraper](https://github.com/Rototu/procedural-sckyscraper-city-generator-and-shader/blob/master/main.js),
 [Learning THREE js](http://learningthreejs.com/blog/2013/08/02/how-to-do-a-procedural-city-in-100lines/)
 
-Live version of code can be found by [clicking here](https://cs.usm.maine.edu/~shaikh/cos452/finalproject/ProceduralCity.html)
+Live version of the code can be found by [clicking here](https://cs.usm.maine.edu/~shaikh/cos452/finalproject/ProceduralCity.html)
 
-All textures are in textures folder <br/>
-Build contains all of the three.js files to get project to work<br/>
+All textures are included in the textures folder <br/>
+The build contains all of the three.js files necessary to run the project<br/>
 
 All code was done in ProceduralCity.html file
-
-Screenshots of some randomly generated cities is provided in the screenshots folder
+Screenshots of some randomly generated cities are provided in the screenshots folder
 
