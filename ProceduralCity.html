@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Procedural City</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	    <link type="text/css" rel="stylesheet" href="Instructions.css">
+	</head>
+	<body>
+		<div id="blocker">
+			<div id="instructions">
+				<span style="font-size:60px">Welcome to Our Small City Generator</span>
+				<br /><br />
+				<span style="font-size:25px">--Instructions--</span>
+				<br />
+				<span style="font-size:20px">
+				When in sky view:<br/>
+				Change City= R<br/>
+				Change Camera Angles= 1,2,3,4,5<br/>
+					Go to First Person With F <br/>
+				</span>
+				<span style="font-size:20px">
+				When in first person:<br/>
+				Move= W,A,S,D<br/>
+				Look: MOUSE<br/>
+					Go back to SkyView With T<br/>
+				</span>
+				<span style="font-size:25px">Click to Continue</span>
+			</div>
+		</div>
+		<script src='build/perlin.js'></script>
+		<script type="module">
+			import * as THREE from './build/three.module.js';
+			import { PointerLockControls } from './build/PointerLockControls.js';
+
+			//initializes the global properties of three and the scene
+			let camera, scene, renderer, controls, blocker, instructions;
+			let viewType = "skyview";
+			let objects = [];
+
+			let moveForward = false;
+			let moveBackward = false;
+			let moveLeft = false;
+			let moveRight = false;
+			let canJump = false;
+
+			let prevTime = performance.now();
+			let velocity = new THREE.Vector3();
+			let direction = new THREE.Vector3();
+			let vertex = new THREE.Vector3();
+			let color = new THREE.Color();
+
+			//initializes the global properties of the city
+			let gridSize = 15;
+			let roadWidth = 20;
+			let maximumTreeDensity = 70;
+			let chunkSize = 150;
+			let chunkMargin = 10;
+			let minBuildingHeight = 50;
+			let maxBuildingHeight = 400;
+			const maxBuildingHeightRandomness = 15;
+			const tallBuildingAvgStop = 40;
+
+			function getSceneWidth() {
+				return chunkSize * gridSize;
+			}
+			function getSceneLength() {
+				return chunkSize * gridSize;
+			}
+
+			//controls how many small buildings per chunk
+			const subChunks = 2;
+			
+			//largest gap possible between buildings
+			const maxBuildingGap = 20;
+			
+			//setting the height range of our objects
+			const groundHeight = 30;
+			const curbHeight = 1;
+			const minTreeHeight = 4;
+			const maxTreeHeight = 10;
+
+			//global booleans to tell weather its a building chunk or another chunk
+			let groundMap;
+			let buildingMap;
+			
+			//controls how random each chunk is in deciding weather its a ground or building chunk
+			const groundThreshold = 0.85;
+			const parkThreshold = 0.2;
+
+			function getRandomIntBetween(min, max) {
+				min = Math.ceil(min);
+				max = Math.floor(max);
+				return Math.floor(Math.random() * (max - min + 1)) + min;
+			}
+			
+			function generateLighting() {
+
+				// Creates lights with first parameter of color and last being intensity
+				let hemisphereLight = new THREE.HemisphereLight('lightblue', 'lightblue', 0.4);
+
+				let shadowLight = new THREE.DirectionalLight(0x000000, 0.25);
+
+				shadowLight.position.set(getSceneWidth() / 2, 800, getSceneLength() / 2);
+			
+				let backLight = new THREE.DirectionalLight('lightblue', 0.1);
+
+				backLight.position.set(-120, 180, 60);
+			
+				scene.add(backLight, shadowLight, hemisphereLight);
+			}
+			
+	        //normalizes our random numbers so they are between 0 and 1
+			function normalizeArray(array) {
+			
+				let minValue = Math.min.apply(Math, array);
+				let maxValue = Math.max.apply(Math, array);
+			
+				//makes the coords between 0 and 1
+				return array.map(function (value) {
+				return (value - minValue) / (maxValue - minValue);
+				});
+			}
+			
+			//takes the 1-d array and makes it 2d for our chunk positions
+			function generate2DArray(array, numberOfColumns) {
+			
+				let temp = array.slice(0);
+				let results = [];
+			
+				while (temp.length) {
+				results.push(temp.splice(0, numberOfColumns));
+				}
+				return results;
+			}
+
+			// generates the base chunks
+			function generatePreceduralMaps() {
+			
+				noise.seed(Math.random());
+
+				//generates the perlin noise randomness variables
+				let generalNoiseFrequency = 15;
+				let groundNoiseFrequency = 8;
+
+				let generalNoiseDistribution = [];
+				let groundNoiseDistribution = [];
+			
+				//loops through and creates the distribution of noise across the chunk
+				for (let i = 0; i < gridSize; i++) {
+				for (let j = 0; j < gridSize; j++) {
+					generalNoiseDistribution.push(Math.abs(noise.perlin2(i / generalNoiseFrequency, j / generalNoiseFrequency))),
+					groundNoiseDistribution.push(Math.abs(noise.perlin2(i / generalNoiseFrequency, j / groundNoiseFrequency)));
+				}
+				}
+			
+				//normalizes noise points between 0 and 1
+				let normalizedDistribution = normalizeArray(generalNoiseDistribution);
+			
+				//a map that holds weather its a ground or building chunk
+				let groundDistributionMap = normalizedDistribution.map(function (arrayValue) {
+				return arrayValue <= groundThreshold ? true : false;
+				});
+			
+				//transforms the map to 2d points
+				groundMap = generate2DArray(groundDistributionMap, gridSize);
+			
+				// normalizes ground points
+				let normalizedGroundDistribution = normalizeArray(groundNoiseDistribution);
+			
+				// Map our noises to an array holding binary values which indicate whether it's a building or a park block
+				let buildingDistributionMap = normalizedGroundDistribution.map(function (
+				arrayValue,
+				index
+				) {
+				return !!(groundDistributionMap[index] && arrayValue > parkThreshold);
+				});
+			
+				// making the distribution of buildings a 2D point instead of a single value
+				buildingMap = generate2DArray(buildingDistributionMap, gridSize);
+			}
+
+            //creates the snow texture
+			const snowTexture = new THREE.TextureLoader().load( 'textures/snow.jpg' );
+			
+			// Create a mesh we're going to use to model our snow elements
+			function getSnowMesh(boxParams, position) {
+				
+				let material = new THREE.MeshPhongMaterial({ map : snowTexture });
+			
+				// creates box geometry for the snow
+				let geometry = new THREE.BoxGeometry(
+				boxParams.width,
+				boxParams.height,
+				boxParams.depth
+				);
+			
+				// Generate and return the mesh
+				let mesh = new THREE.Mesh(geometry, material);
+				mesh.position.set(position.x, position.y, position.z);
+				mesh.receiveShadow = false;
+				mesh.castShadow = false;
+			
+				return mesh;
+			}
+			
+			//takes a params we created for box and returns there mesh with a optional shadow
+			function createBoxMesh(boxParams, position, color, shadowOn) {
+			
+				//makes shadowOn defaulted to true if its not passed in
+				if (typeof  shadowOn === "undefined")  shadowOn = true;
+
+				let material = new THREE.MeshLambertMaterial({
+				color: color
+				});
+
+				let geometry = new THREE.BoxGeometry(
+				boxParams.width,
+				boxParams.height,
+				boxParams.depth
+				);
+
+				let mesh = new THREE.Mesh(geometry, material);
+				mesh.position.set(position.x, position.y, position.z);
+				mesh.receiveShadow = true;
+				mesh.castShadow =  shadowOn;
+			
+				return mesh;
+			}
+			
+			//takes all the meshes and merges them into a single mesh
+			function createSingleMesh(meshList) {
+
+				let geometry = new THREE.Geometry();
+			
+				// Merge all of the meshes:
+				for (let i = 0; i < meshList.length; i++) {
+				meshList[i].updateMatrix();
+				geometry.merge(meshList[i].geometry, meshList[i].matrix);
+				}
+
+				//creates mesh
+				let mergedMesh = new THREE.Mesh(geometry, meshList[0].material);
+				mergedMesh.castShadow = true;
+				mergedMesh.receiveShadow = true;
+			
+				return mergedMesh;
+			}
+			
+			//functions to create proper cordinates for the scene
+			function getSceneXCoordinate(x) {
+				return x * chunkSize + chunkSize / 2 - getSceneWidth() / 2;
+			
+			}
+
+			function getSceneZCoordinate(z) { 
+				return z * chunkSize + chunkSize / 2 - getSceneLength() / 2;
+			}
+			
+			//functions to check if its a ground or building chunk and returns its cords
+			function isGroundChunk(x, z) {
+				return groundMap[x][z];
+			}
+
+			function isBuildingChunk(x, z) {
+				return buildingMap[x][z];
+			}
+
+			// generates the each object on the chunk including making each type of non building chunk
+			function generateCityChunkObjects() {
+			
+				let streetHeight = 2 * curbHeight;
+			
+				// makes the base color of our streets a dark brown color
+				let baseColor = 0x736b5c;
+			
+				let baseGeometryParams = { width: getSceneWidth(),  height: groundHeight, depth: getSceneLength() };
+			
+				let basePosition = { x: 0, y: -(groundHeight / 2) - streetHeight, z: 0 };
+			
+				let baseMesh = createBoxMesh(baseGeometryParams, basePosition, baseColor);
+			
+				// Initialize the snow mesh parameters and creates the snow mesh
+				let snowGeometryParams = { width: getSceneWidth() - 2, height: 0, depth: getSceneLength() - 2 };
+			
+				let snowPosition = { x: 0,  y: -streetHeight,  z: 0 };
+			
+				let snow = getSnowMesh(snowGeometryParams, snowPosition);
+
+				//determines where the streets should go
+				let groundMeshList = [];
+				let streetMeshList = [];
+			
+				for (let i = 0; i < groundMap.length; i++) {
+				for (let j = 0; j < groundMap[0].length; j++) {
+					
+					if (isGroundChunk(i, j)) {
+						
+						let x = getSceneXCoordinate(i);
+						let z = getSceneZCoordinate(j);
+			
+						groundMeshList.push(
+							createBoxMesh(
+							// Geometry parameters
+							{ width: chunkSize, height: 0,  depth: chunkSize },
+							// Positional parameters
+							{ x: x, y: -streetHeight,  z: z
+							}, // Mesh color
+							0x736b5c
+							));
+			
+						streetMeshList.push(
+							createBoxMesh(
+							{ width: chunkSize, height: streetHeight, depth: chunkSize },
+							{ x: x, y: -streetHeight / 2, z: z
+							}, // adds the color to the street
+									0x999999
+							));
+					}
+				}
+				}
+			
+				// puts the street and ground together in the mesh
+				if (streetMeshList.length) scene.add(createSingleMesh(streetMeshList));
+				if (groundMeshList.length) scene.add(createSingleMesh(groundMeshList));
+			
+				//adds snow chunks to the screen
+				scene.add(baseMesh, snow);
+			}
+			
+		    //makes the ground chunks
+			function generateGroundChunk() {
+			
+				// loops through the grid to check for ground chunks
+				for (let i = 0; i < gridSize; i++) {
+				for (let j = 0; j < gridSize; j++) {
+					
+					if (isGroundChunk(i, j)) {
+
+						//converts cords so it can be displayed in the scene
+						let x = getSceneXCoordinate(i);
+						let z = getSceneZCoordinate(j);
+			
+						// assigns the curb width based off the
+						// randomness of the road and chunk next to it
+						let curbWidth = chunkSize - roadWidth;
+			
+					    //checks if chunk is for building or not
+						if (isBuildingChunk(i, j)) {
+			
+
+							let buildingCurbMesh = createBoxMesh(
+							// Geometry parameters
+							{ width: curbWidth, height: curbHeight, depth: curbWidth
+							},
+							// Positional parameters
+							{ x: x, y: curbHeight / 2, z: z
+							});
+			
+							scene.add(buildingCurbMesh);
+
+							//calculates random height and number buildings in the chunk
+							let buildingHeight = getRandomIntBetween(
+							minBuildingHeight,
+							maxBuildingHeight
+							);
+			
+							let buildingWidth = curbWidth - chunkMargin * 2;
+			
+							let buildingGeometryParameters = {
+							width: buildingWidth,
+							height: buildingHeight,
+							depth: buildingWidth
+							};
+			
+							let buildingPosition = { x: x, z: z };
+			
+							generateBuildingChunk(
+							buildingGeometryParameters,
+							buildingPosition,
+							subChunks,
+							[] );
+
+							//else make a park or parking lot if its not a building chunk
+						} else {
+						
+						    //random chance for a park or parking lot
+							let parkRand = Math.random() * 10;
+							if (parkRand <= 5) {
+							
+						    //creates park
+							let parkMesh = createBoxMesh(
+								// Geometry parameters
+								{ width: curbWidth, height: curbHeight, depth: curbWidth},
+								// Positional parameters
+								{ x: x, y: curbHeight / 2, z: z},
+									//sets the park to the color green
+									0x81a377
+							);
+			
+							scene.add(parkMesh);
+
+							let treeWidth = curbWidth - chunkMargin * 2;
+
+							generateTrees(x, z, treeWidth);
+
+							//creates parking lot
+							} else {
+
+							// parking textures
+							let parkingTexture = new THREE.TextureLoader().load( 'textures/parking1.jpg');
+							parkingTexture.repeat.set(3, 5);
+							parkingTexture.wrapS = THREE.RepeatWrapping;
+							parkingTexture.wrapT = THREE.RepeatWrapping;	
+
+							let parkingMaterial = new THREE.MeshLambertMaterial({map: parkingTexture});
+							let parkingGeometry = new THREE.BoxGeometry(curbWidth, curbHeight, curbWidth);
+							let parkingMesh = new THREE.Mesh(parkingGeometry, parkingMaterial);
+							parkingMesh.position.set(x, curbHeight / 2, z);
+
+							scene.add(parkingMesh);
+							}
+						}
+					}
+				}
+			}
+		}
+			// makes a tree
+			let Tree = function (x, z) {
+			
+				// holds the different part of the tree
+				this.components = [];
+
+				// Generate a random height for our tree
+				let treeHeight = getRandomIntBetween(minTreeHeight, maxTreeHeight);
+				
+				let treeMaterial = new THREE.MeshLambertMaterial({color: 0x736b5c});
+				
+				let branchColors = [0x306030, 0xff7f50, 0xc30b4e,0xffa631, 0xfffafa, 0xf8f8ff];
+				let colorRand = Math.floor(Math.random() * branchColors.length);
+				let branchMaterial = new THREE.MeshLambertMaterial({color: branchColors[colorRand]});
+
+				// Create a the mesh for the trunk
+				let trunkGeometry = new THREE.BoxGeometry(2, treeHeight, 2);
+				let trunkMesh = new THREE.Mesh(trunkGeometry, treeMaterial);
+				trunkMesh.position.set(x,  treeHeight / 2 + curbHeight, z);
+		
+				// Create a the mesh for branch type 1
+				let branchGeometry1 = new THREE.BoxGeometry(8, maxTreeHeight * 1.5, 5);
+				let branchMesh1 = new THREE.Mesh(branchGeometry1, branchMaterial);
+				branchMesh1.position.set(x, treeHeight + curbHeight + 5, z);
+
+				// Create a the mesh for branch type 2
+				let branchGeometry2 = new THREE.DodecahedronGeometry( 6 );
+				let branchMesh2 = new THREE.Mesh(branchGeometry2, branchMaterial);
+				branchMesh2.position.set(x, treeHeight+5, z);
+
+				// Create a the mesh for branch type 3
+				let branchGeometry3 = new THREE.ConeGeometry( 5, maxTreeHeight* 1.5);
+				let branchMesh3 = new THREE.Mesh(branchGeometry3, branchMaterial);
+				branchMesh3.position.set(x, treeHeight+5, z);
+
+				// Create a the mesh for branch type 4
+				let branchGeometry4 = new THREE.CylinderGeometry( 5, 5, maxTreeHeight* 1.5);
+				let branchMesh4 = new THREE.Mesh(branchGeometry4, branchMaterial);
+				branchMesh4.position.set(x, treeHeight+5, z);
+
+				//an array to randomly swap between tree types
+				let branchMeshes = [branchMesh1,branchMesh2,branchMesh3,branchMesh4];
+
+				// Rotate the tree in a random direction
+				branchMeshes[treeRand].rotation.y = Math.random();
+
+				// Add the branch and trunk to the tree components list
+				this.components.push(branchMeshes[treeRand], trunkMesh);
+			
+				// makes the tree a single mesh based on its components
+				this.getMergedMesh = function () {
+				return createSingleMesh(this.components);
+				};
+			};
+			
+		    //adds the trees to the scene
+			function generateTrees(x, z, parkSize) {
+			
+				let trees = [];
+			
+				//adds a random number of trees to the chunk
+				let numberOfTrees = getRandomIntBetween(0, maximumTreeDensity);
+
+				for (let i = 0; i < numberOfTrees; i++) {
+
+				//random position for the trees
+				let tree_x_coord = getRandomIntBetween(x - parkSize / 2, x + parkSize / 2);
+				let tree_z_coord = getRandomIntBetween(z - parkSize / 2, z + parkSize / 2);
+
+				let tree = new Tree(tree_x_coord, tree_z_coord);
+				trees.push(tree.getMergedMesh());
+				}
+			
+				// adds the chunk of trees to the scene
+				if (trees.length) scene.add(createSingleMesh(trees));
+			}
+
+			//building textures
+		    let buildingTextures = [11];
+			buildingTextures[0] = new THREE.TextureLoader().load( 'textures/building0.jpg' );
+			buildingTextures[0].repeat.set(8, 8);
+			buildingTextures[0].wrapS = THREE.RepeatWrapping;
+			buildingTextures[0].wrapT = THREE.RepeatWrapping;
+
+			for(let i = 1; i < 10; i++ ){
+				buildingTextures[i] = new THREE.TextureLoader().load( 'textures/building' + i + '.jpg');
+			}
+
+			//the number that chooses a random texture from the array and random shape
+			let buildingRand = Math.floor(Math.random() * buildingTextures.length);
+			let shapeRand = Math.floor(Math.random() * 10);
+			let treeRand = Math.floor(Math.random() * 4);
+
+			// Create a mesh we're going to use for our buildings
+			function getBuildingMesh(boxGeometryParameters, position) {
+			
+				let buildingSideMaterial = new THREE.MeshLambertMaterial({
+				map: buildingTextures[buildingRand] // random building texture
+				});
+
+				//maps texture on sides of the building
+				buildingSideMaterial.map.needsUpdate = true;
+
+				let buildingTopMaterial = new THREE.MeshLambertMaterial({
+				color: color
+				});
+			
+				// Create a box geometry for box shaping buildings
+				let boxGeometry = new THREE.BoxGeometry(
+				boxGeometryParameters.width,
+				boxGeometryParameters.height,
+				boxGeometryParameters.depth
+				);
+				// Set the building materials for each box geometry building side
+				let boxMaterials = [
+				buildingSideMaterial, 
+				buildingSideMaterial, 
+				buildingTopMaterial, 
+				buildingTopMaterial, 
+				buildingSideMaterial,
+				buildingSideMaterial
+				];
+
+				// Create a cylinder geometry for rounded buildings
+				let roundGeometry = new THREE.CylinderGeometry(
+				boxGeometryParameters.width/2.2,
+				boxGeometryParameters.width/2.2,
+				boxGeometryParameters.height
+				);
+
+				// Set the building materials for each cylinder building side
+				let roundMaterials = [
+				buildingSideMaterial, // Left side
+				buildingTopMaterial, // Top side
+				];
+
+				// Create a cone geometry for cone shaped buildings
+				let coneGeometry = new THREE.ConeGeometry(
+				boxGeometryParameters.width/2.2,
+				boxGeometryParameters.height
+				);
+
+				// Set the building materials for each cone building side
+				let coneMaterials = [
+				buildingSideMaterial, // Other sides
+				buildingTopMaterial, // Top/Bottom side
+				];
+
+				let shapeGeometries = [boxGeometry,roundGeometry,coneGeometry];
+				let shapeMaterials = [boxMaterials,roundMaterials,coneMaterials];
+
+				//chooses a random shape for the building
+				let mesh;
+				// 50 percent of buildings are box geometry
+				if (shapeRand <= 5){
+				mesh = new THREE.Mesh(shapeGeometries[0],shapeMaterials[0]);
+				}
+				// 30 percent of buildings are cylinder geometry
+				else if (shapeRand > 5 && shapeRand <= 8){
+				mesh = new THREE.Mesh(shapeGeometries[1],shapeMaterials[1]);
+				}
+				// 20 percent of buildings are cone geometry
+				else if (shapeRand > 8){
+				mesh = new THREE.Mesh(shapeGeometries[2],shapeMaterials[2]);
+				}
+				mesh.position.set(position.x, position.y, position.z);
+			
+				mesh.receiveShadow = true;
+				mesh.castShadow = true;
+			
+				return mesh;
+			}
+			
+			// creates buildings
+			let Building = function (geometryParameters, position) {
+			
+				// holds each part of a building
+				this.components = [];
+
+				let buildingMesh = getBuildingMesh(geometryParameters, position);
+				this.components.push(buildingMesh);
+
+				this.getMergedMesh = function () {
+				return createSingleMesh(this.components);
+				};
+			
+			};
+			
+			//determines if the building is tall or short
+			function isTall(height) {
+				return Math.round(height / maxBuildingHeight * 100) >= tallBuildingAvgStop;
+			}
+
+			//makes building chunk
+			function generateBuildingChunk(
+				geometryParameters,
+				position,
+				numOfDivisions,
+				buildings
+			) {
+				// determines how many buildings are in chunk based on size of buildings
+				if (isTall(geometryParameters.height) || numOfDivisions < 1) {
+
+				// Generate a randomized range of heights for the buildings
+				let maxHeightDeviation = getRandomIntBetween(0, maxBuildingHeightRandomness);
+			
+				// Generate a random building height falling within our range
+				let buildingHeight = getRandomIntBetween(
+					geometryParameters.height - maxHeightDeviation,
+					geometryParameters.height + maxHeightDeviation
+				);
+
+				let buildingGeometryParameters = {
+					width: geometryParameters.width,
+					height: buildingHeight,
+					depth: geometryParameters.depth
+				};
+				let buildingPosition = {
+					x: position.x,
+					y: buildingGeometryParameters.height / 2 + curbHeight,
+					z: position.z
+				};
+			
+			    //adds building to chunk
+				let building = new Building(buildingGeometryParameters, buildingPosition);
+				buildings.push(building.getMergedMesh());
+			
+				// Calculate the amount of buildings we've already generated
+				let totalBuildingsBuilt = buildings.length;
+
+				//sees how many more buildings need to be created
+				let totalBuildingsToBuild = Math.pow(2, subChunks);
+			
+				//stops making buildings if there is not more and adds the chunk to the scene
+				if (
+					totalBuildingsBuilt >= totalBuildingsToBuild ||
+					isTall(buildingGeometryParameters.height)
+				) {
+					scene.add(createSingleMesh(buildings));
+				}
+				} else {
+
+					//if more buildings need to be made it makes a smaller chunk an does the same process
+				let sliceDeviation = Math.abs(
+					getRandomIntBetween(0, maxBuildingGap)
+				);
+			
+				//ensures we are still within the chunk and creates a new depth for the smaller chunk
+				if (geometryParameters.width <= geometryParameters.depth) {
+					let depth1 =
+						Math.abs(geometryParameters.depth / 2 - sliceDeviation) -
+						chunkMargin / 2;
+					let depth2 =
+						Math.abs(-(geometryParameters.depth / 2) - sliceDeviation) -
+						chunkMargin / 2;
+			
+					// then makes new z coordinates for the smaller chunk
+					let z1 =
+						position.z +
+						sliceDeviation / 2 +
+						geometryParameters.depth / 4 +
+						chunkMargin / 4;
+					let z2 =
+						position.z +
+						sliceDeviation / 2 -
+						geometryParameters.depth / 4 -
+						chunkMargin / 4;
+			
+					//now recursively make the buildings in the smaller chunk
+					generateBuildingChunk(
+						//building mesh properties
+						{ width: geometryParameters.width,  height: geometryParameters.height, depth: depth1 },
+						{ x: position.x, z: z1 },
+							//lowers the amount of sub chunks need be made
+						numOfDivisions - 1,
+						buildings
+					);
+
+					//calls function again on second z positions
+					generateBuildingChunk(
+						{ width: geometryParameters.width, height: geometryParameters.height, depth: depth2 },
+						{ x: position.x, z: z2 },
+						numOfDivisions - 1,
+						buildings
+					);
+				} else {
+					
+					//make more sub chunks based off other possible depth values
+					let width1 =
+						Math.abs(geometryParameters.width / 2 - sliceDeviation) -
+						chunkMargin / 2;
+					let width2 =
+						Math.abs(-(geometryParameters.width / 2) - sliceDeviation) -
+						chunkMargin / 2;
+			
+					// new position
+					let x1 =
+						position.x +
+						sliceDeviation / 2 +
+						geometryParameters.width / 4 +
+						chunkMargin / 4;
+					let x2 =
+						position.x +
+						sliceDeviation / 2 -
+						geometryParameters.width / 4 -
+						chunkMargin / 4;
+
+					//does recursion again
+					generateBuildingChunk(
+						{ width: width1, height: geometryParameters.height, depth: geometryParameters.depth },
+						{ x: x1, z: position.z },
+						numOfDivisions - 1,
+						buildings
+					);
+			
+					generateBuildingChunk(
+						{ width: width2, height: geometryParameters.height, depth: geometryParameters.depth },
+						{ x: x2,  z: position.z },
+						numOfDivisions - 1,
+						buildings
+					);
+				}
+				}
+			}
+			
+			// Function called on window resize events.
+			function onWindowResize() {
+			
+				renderer.setSize(window.innerHeight, window.innerHeight);
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+			
+			}
+
+			// Generate the building scene and renderer
+			function generateScene() {
+
+			scene = new THREE.Scene();
+			if (viewType === "firstperson") {
+				scene.fog = new THREE.Fog( 'skyblue', 0, 1000 );
+			}
+
+			renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, premultipliedAlpha: false });
+
+			renderer.shadowMapEnabled = true;
+		
+			//sets the type of the shadowType
+			renderer.shadowMapType = THREE.PCFSoftShadowMap;
+		
+			renderer.setSize(window.innerWidth, window.innerHeight);
+
+			document.body.appendChild(renderer.domElement);
+			
+			if (viewType === "skyview") {
+				gridSize = 10;
+				skyview();
+			}else {
+				gridSize = 25;
+				firstPerson();
+			}
+
+			//calculates for when the window gets resized
+			window.addEventListener("resize", onWindowResize, false);
+		}
+			let render = function () {
+			
+				requestAnimationFrame(render);
+
+				//sets up pointer lock controls
+				if (viewType === "firstperson") { //turns firstPerson view on
+						
+					checkCameraBounds();
+
+					let time = performance.now();
+					let delta = ( time - prevTime ) / 1000;
+
+					velocity.x -= velocity.x * 8.0 * delta;
+					velocity.z -= velocity.z * 8.0 * delta;
+
+					velocity.y -= 9.8 * 100.0 * delta; // 100.0 = mass
+
+					direction.z = Number( moveForward ) - Number( moveBackward );
+					direction.x = Number( moveRight ) - Number( moveLeft );
+					direction.normalize(); // this ensures consistent movements in all directions
+
+					if ( moveForward || moveBackward ) velocity.z -= direction.z * 400.0 * delta;
+					if ( moveLeft || moveRight ) velocity.x -= direction.x * 400.0 * delta;
+
+					controls.moveRight( - velocity.x * delta );
+					controls.moveForward( - velocity.z * delta );
+
+					controls.getObject().position.y += ( velocity.y * delta );
+
+					if ( controls.getObject().position.y < 10 ) {
+						velocity.y = 0;
+						controls.getObject().position.y = 10;
+
+						canJump = true;
+					}
+					prevTime = time;
+			}
+				renderer.render(scene, camera);
+		};
+
+		// Ensures the explorer stays within the bounds of the city
+		function checkCameraBounds() {
+			let maxBound = getSceneWidth()/2;
+			let minBound = (getSceneWidth()*-1)/2;
+
+			if (camera.position.x > maxBound) {
+				camera.position.x = maxBound;
+			}
+			if (camera.position.x < minBound) {
+				camera.position.x = minBound;
+			}
+			if (camera.position.z > maxBound) {
+				camera.position.z = maxBound;
+			}
+			if (camera.position.z < minBound) {
+				camera.position.z = minBound;
+			}
+			}
+							
+		// resets the scene
+		function reset() {
+			controls.unlock();
+			let canvas = document.getElementsByTagName("CANVAS")[0];
+			document.body.removeChild(canvas);
+			init();
+		}
+						
+			//initilizes the new reset scene
+			function init() {			
+			generateScene();
+			generateLighting();
+			generatePreceduralMaps();
+			generateCityChunkObjects();
+			generateGroundChunk();
+		}
+			init();
+			render();
+
+			function skyview() {//sets up the sky texture
+				
+				let maxBound = getSceneWidth()/2;
+				let minBound = (getSceneWidth()*-1)/2;
+
+				// Create a camera and set its position in the world space.
+				camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 4000);
+				camera.position.set(minBound, maxBound-100, minBound);
+				camera.lookAt(new THREE.Vector3(0, 0, 0));
+			
+				// Use orbit controls, which allow the camera to orbit around a target.
+				controls = new PointerLockControls( camera, document.body );
+
+				blocker = document.getElementById( 'blocker' );
+				instructions = document.getElementById( 'instructions' );
+
+				instructions.addEventListener( 'click', function () {
+					controls.lock();
+				}, false );
+
+				controls.addEventListener( 'lock', function () {
+					instructions.style.display = 'none';
+					blocker.style.display = 'none';
+				} );
+
+				controls.addEventListener( 'unlock', function () {
+					blocker.style.display = 'block';
+					instructions.style.display = '';
+				} );
+
+				//adds controls to sky view
+				window.onkeyup = function(event)
+				{
+					switch(event.key)
+					{
+						case 'f':
+							viewType = "firstperson";
+							reset();
+							break;
+						case 'r':
+							viewType = "skyview";
+							buildingRand = Math.floor(Math.random() * buildingTextures.length);
+							shapeRand = Math.floor(Math.random() * 10);
+							treeRand = Math.floor(Math.random() * 4);
+							reset();
+						case '1':
+							camera.position.set(minBound, maxBound-100, minBound);
+							camera.lookAt(new THREE.Vector3(0, 0, 0));
+							break;
+						case '2':
+							camera.position.set(0, maxBound, 0);
+							break;
+						case '3':
+							camera.position.set(maxBound, maxBound-100, maxBound);
+							camera.lookAt(new THREE.Vector3(0, 0, 0));
+							break;
+						case '4':
+							camera.position.set(maxBound, maxBound-100, 0);
+							camera.lookAt(new THREE.Vector3(0, 0, 0));
+							break;
+						case '5':
+							camera.position.set(0, maxBound-100, maxBound);
+							camera.lookAt(new THREE.Vector3(0, 0, 0));
+							break;
+
+					}
+				}
+		}
+			// Adds first person view and its event listeners
+			function firstPerson() {
+
+				camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 4000 );
+
+				controls = new PointerLockControls( camera, document.body );
+
+				window.onkeydown = function(event)
+				{
+					switch(event.key)
+					{
+						case 'ArrowUp':
+						case 'w': 
+							moveForward = true;
+							break;
+
+						case 'ArrowLeft':
+						case 'a':
+							moveLeft = true;
+							break;
+
+						case 'ArrowDown':
+						case 's':
+							moveBackward = true;
+							break;
+
+						case 'ArrowRight':
+						case 'd':
+							moveRight = true;
+							break;
+
+						case ' ': // space
+							if ( canJump === true ) velocity.y += 200;
+							canJump = false;
+							break;
+
+						case 't':
+							viewType = "skyview";
+							reset();
+					}
+				};
+
+				window.onkeyup = function(event)
+				{
+					switch(event.key)
+					{
+						case 'ArrowUp':
+						case 'w': 
+							moveForward = false;
+							break;
+
+						case 'ArrowLeft':
+						case 'a':
+							moveLeft = false;
+							break;
+
+						case 'ArrowDown':
+						case 's':
+							moveBackward = false;
+							break;
+
+						case 'ArrowRight':
+						case 'd':
+							moveRight = false;
+							break;
+					}
+				};		
+			}
+		</script>
+	</body>
+</html>
