@@ -16,6 +16,7 @@ Live version of the code can be found by [clicking here](https://cs.usm.maine.ed
 All textures are included in the textures folder <br/>
 The build contains all of the three.js files necessary to run the project<br/>
 
-All code was done in ProceduralCity.html file
+All code was done in ProceduralCity.html file.
+
 Screenshots of some randomly generated cities are provided in the screenshots folder
 
