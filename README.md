@@ -1,5 +1,4 @@
-# Small City Generator
-## A Random Procedural City Generator
+# Procedural City Generator
 ### By Fazil Shaikh and Jon Mallozzi
 
 
