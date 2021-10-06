@@ -21,3 +21,19 @@ All code was done in ProceduralCity.html file.
 
 Screenshots of some randomly generated cities are provided in the screenshots folder
 
+
+## Screenshots
+
+![demoImage1](screenshots/demoImage1.PNG)
+![demoImage2](screenshots/demoImage2.PNG)
+![demoImage3](screenshots/demoImage3.PNG)
+![demoImage4](screenshots/demoImage4.PNG)
+![demoImage5](screenshots/demoImage5.PNG)
+![demoImage6](screenshots/demoImage6.PNG)
+![demoImage7](screenshots/demoImage7.PNG)
+![demoImage8](screenshots/demoImage8.PNG)
+![demoImage9](screenshots/demoImage9.PNG)
+![demoImage10](screenshots/demoImage10.PNG)
+![demoImage11](screenshots/demoImage11.PNG)
+![demoImage12](screenshots/demoImage12.PNG)
+![demoImage13](screenshots/demoImage13.PNG)
