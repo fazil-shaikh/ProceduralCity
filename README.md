@@ -5,8 +5,6 @@ We made a procedural city generator that generates different types of city layou
 
 Our project utilizes features such as lighting, shading, fog, noise, geometry manipulation, texture-mapping, and camera controls provided with the three.js library. Overall, this project is an operative blend of everything that was covered throughout the course and we enjoyed working on it. You may notice that you can go through buildings and other objects. That is simply because your character is supposed to be a ghost, and it has nothing to do with us not having enough time to implement collision-detection! :)
 
-Live version of the code can be accessed by [clicking here](https://cs.usm.maine.edu/~shaikh/cos452/finalproject/ProceduralCity.html)
-
 We were inspired by these articles/repositories: [medium article](https://medium.com/@Rototu/making-a-procedural-skyscraper-city-generator-with-three-js-and-webgl2-8f8b721bd044),
 [threex.proceduralcity
 ](https://github.com/jeromeetienne/threex.proceduralcity),
